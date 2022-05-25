@@ -244,8 +244,8 @@ export class GDBServerConsole {
                     console.log(msg);
                     // fs.writeFileSync(logFd, msg);
                 }
-                fs.writeFileSync(consoleLogFd, data.toString());
-                fs.fdatasyncSync(consoleLogFd);
+                fs.writeFile(consoleLogFd, data.toString(), null);
+                fs.fdatasync(consoleLogFd, null);
             }
         }
         catch (e) {
