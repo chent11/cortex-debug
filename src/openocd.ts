@@ -150,7 +150,7 @@ export class OpenOCDServerController extends EventEmitter implements GDBServerCo
             'SWO_Init'
         );
         // commands.push(this.args.swoConfig.profile ? 'EnablePCSample' : 'DisablePCSample');
-        
+
         return commands.map((c) => `interpreter-exec console "${c}"`);
     }
 
@@ -173,6 +173,9 @@ export class OpenOCDServerController extends EventEmitter implements GDBServerCo
         serverargs.push('-c', `gdb_port ${this.ports['gdbPort']}`);
         serverargs.push('-c', `tcl_port ${this.ports['tclPort']}`);
         serverargs.push('-c', `telnet_port ${this.ports['telnetPort']}`);
+        // Tested on the Jlink and the STlink. If the hardware breakpoint is not enabled,
+        // the breakpoint cannot be set, I think this should be set by default.
+        serverargs.push('-c', 'gdb_breakpoint_override hard');
 
         this.args.searchDir.forEach((cs, idx) => {
             serverargs.push('-s', cs);
@@ -187,9 +190,50 @@ export class OpenOCDServerController extends EventEmitter implements GDBServerCo
         }
 
         serverargs.push('-f', `${this.args.extensionPath}/support/openocd-helpers.tcl`);
+        let target: String
+        let openocdInterface: String
         this.args.configFiles.forEach((cf, idx) => {
-            serverargs.push('-f', cf);
+            if (cf.startsWith('target/')) {
+                target = cf;
+            } else if (cf.startsWith('interface/')) {
+                openocdInterface = cf;
+            } else {
+                serverargs.push('-f', cf);
+            }
         });
+
+        if (openocdInterface) {
+            serverargs.push('-f', openocdInterface);
+        }
+        // Transport selection option, like "transport select swd", must be placed after
+        // the interface/xxx.cfg and before target/xxx.cfg configs
+        const cortexDebugInterface: String = this.args.interface
+        if (cortexDebugInterface) {
+            switch (cortexDebugInterface) {
+                case 'swd':
+                    switch (openocdInterface) {
+                        case 'interface/stlink.cfg':
+                            serverargs.push('-c', 'transport select hla_swd');
+                            break;
+                        // There may be other debuggers like the 'stlink' that is supposed to use
+                        // the same interface config but the openocd need to treat them specially.
+                        default:
+                            serverargs.push('-c', 'transport select swd');
+                            break;
+                    }
+                    break;
+                case 'jtag':
+                    serverargs.push('-c', 'transport select jtag');
+                    break;
+                default:
+                    console.error(`Interface error: ${cortexDebugInterface} is not supported by now.`);
+                    break;
+            }
+        }
+
+        if (target) {
+            serverargs.push('-f', target);
+        }
 
         if (this.args.rtos) {
             serverargs.push('-c', `CDRTOSConfigure ${this.args.rtos}`);
